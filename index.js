@@ -45,7 +45,6 @@ const getAllowedOrigins = () => {
     return [process.env.FRONTEND_URL];
   }
 
-  // Default fallback when env is not provided: main domain + localhost for dev tools
   return ['https://ter.vn', 'https://www.ter.vn', 'http://localhost:3000'];
 };
 

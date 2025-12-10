@@ -10,9 +10,10 @@ const getAllowedOrigins = () => {
   if (process.env.NODE_ENV === 'development' || !process.env.NODE_ENV) {
     return ['http://localhost:3000', 'http://127.0.0.1:5500', 'file://'];
   }
-  // Default cloud fallback to main domain when nothing else is configured
   return ['https://ter.vn', 'https://www.ter.vn'];
 };
+
+const allowNullOrigin = process.env.WEBSOCKET_ALLOW_NO_ORIGIN === 'true';
 
 const CORS_CONFIG = {
   origin: (origin, callback) => {
@@ -36,6 +37,14 @@ const CORS_CONFIG = {
       return callback(null, true);
     }
     
+    // Allow native/mobile clients that don't send Origin when explicitly permitted
+    if (!origin || origin === 'null') {
+      if (allowNullOrigin) {
+        return callback(null, true);
+      }
+      return callback(new Error('Origin missing and WEBSOCKET_ALLOW_NO_ORIGIN is not enabled'));
+    }
+
     // Production: strict check
     if (allowedOrigins.length === 0) {
       return callback(new Error('No allowed origins configured'));

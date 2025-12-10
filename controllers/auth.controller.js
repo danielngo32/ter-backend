@@ -39,11 +39,9 @@ const getCookieOptions = (req) => {
     cookieOptions.domain = '.localhost';
   } else if (process.env.FRONTEND_URL) {
     try {
-      // Derive domain from FRONTEND_URL when running on cloud and no explicit COOKIE_DOMAIN is set
       const url = new URL(process.env.FRONTEND_URL);
       cookieOptions.domain = `.${url.hostname}`;
     } catch {
-      // fall back silently
     }
   }
 
