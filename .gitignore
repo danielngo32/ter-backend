@@ -1,0 +1,65 @@
+# Dependency directories
+node_modules/
+jspm_packages/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.log
+
+# Runtime files
+.env
+.DS_Store
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Build artifacts
+dist/
+build/
+coverage/
+
+# Editor files and directories
+.editorconfig
+.eslintcache
+.prettierrc
+.prettierignore
+
+# Temporary files
+tmp/
+temp/
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Environment variables
+.env
+.env.development
+.env.production
+.env.test
+
+# Test files
+*.spec.js
+*.test.js
+
+# Uploads
+uploads/
+
+# Other
+pids/
+*.pid
+*.seed
+*.sock
+
+# Mac specific files
+.AppleDouble
+.LSOverride
+
+# npm package cache
+.npm/
+
+# Sentry files
+.sentryclirc
