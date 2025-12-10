@@ -19,41 +19,53 @@ const CORS_CONFIG = {
   origin: (origin, callback) => {
     const allowedOrigins = getAllowedOrigins();
     
+    console.log(`[WebSocket CORS] 🌐 Origin check - Origin: ${origin || 'null/undefined'}, Allowed: ${allowNullOrigin}, Mode: ${process.env.NODE_ENV || 'development'}`);
+    console.log(`[WebSocket CORS] 📋 Allowed origins: ${allowedOrigins.join(', ')}`);
+    
     // In development, allow all origins for testing
     if (process.env.NODE_ENV === 'development' || !process.env.NODE_ENV) {
       // Allow null origin (file://, postman, etc.)
       if (!origin || origin === 'null') {
+        console.log('[WebSocket CORS] ✅ Allowing null origin (development mode)');
         return callback(null, true);
       }
       // Allow any localhost
       if (origin.includes('localhost') || origin.includes('127.0.0.1')) {
+        console.log('[WebSocket CORS] ✅ Allowing localhost origin (development mode)');
         return callback(null, true);
       }
       // Allow if in allowed list
       if (allowedOrigins.includes(origin)) {
+        console.log('[WebSocket CORS] ✅ Origin in allowed list');
         return callback(null, true);
       }
       // In dev, allow all
+      console.log('[WebSocket CORS] ✅ Allowing all origins (development mode)');
       return callback(null, true);
     }
     
     // Allow native/mobile clients that don't send Origin when explicitly permitted
     if (!origin || origin === 'null') {
       if (allowNullOrigin) {
+        console.log('[WebSocket CORS] ✅ Allowing null origin (WEBSOCKET_ALLOW_NO_ORIGIN enabled)');
         return callback(null, true);
       }
+      console.error('[WebSocket CORS] ❌ Origin missing and WEBSOCKET_ALLOW_NO_ORIGIN is not enabled');
       return callback(new Error('Origin missing and WEBSOCKET_ALLOW_NO_ORIGIN is not enabled'));
     }
 
     // Production: strict check
     if (allowedOrigins.length === 0) {
+      console.error('[WebSocket CORS] ❌ No allowed origins configured');
       return callback(new Error('No allowed origins configured'));
     }
     
     if (allowedOrigins.includes(origin)) {
+      console.log('[WebSocket CORS] ✅ Origin allowed');
       return callback(null, true);
     }
     
+    console.error(`[WebSocket CORS] ❌ Origin not allowed: ${origin}`);
     callback(new Error('Not allowed by CORS'));
   },
   credentials: true,

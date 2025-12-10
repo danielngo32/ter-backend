@@ -38,7 +38,7 @@ app.set('trust proxy', true);
 
 const getAllowedOrigins = () => {
   if (process.env.ALLOWED_ORIGINS) {
-    return process.env.ALLOWED_ORIGINS.split(',').map(origin => origin.trim());
+    return process.env.ALLOWED_ORIGINS.split(',').map(origin => origin.trim()).filter(Boolean);
   }
 
   if (process.env.FRONTEND_URL) {
@@ -50,14 +50,35 @@ const getAllowedOrigins = () => {
 
 const allowedOrigins = getAllowedOrigins();
 
-app.use(cors({
+// Check if origin is a subdomain of ter.vn
+const isTerVnSubdomain = (origin) => {
+  if (!origin) return false;
+  try {
+    const url = new URL(origin);
+    const hostname = url.hostname.toLowerCase();
+    // Remove www if present
+    const cleanHostname = hostname.startsWith('www.') ? hostname.substring(4) : hostname;
+    // Check if it's ter.vn or a subdomain of ter.vn
+    const result = cleanHostname === 'ter.vn' || cleanHostname.endsWith('.ter.vn');
+    return result;
+  } catch (e) {
+    console.error('Error parsing origin:', origin, e);
+    return false;
+  }
+};
+
+// CORS configuration
+const corsOptions = {
   origin: (origin, callback) => {
+    // Allow requests with no origin (like mobile apps or curl requests)
     if (!origin) {
       callback(null, true);
       return;
     }
     
     const isLocalhost = origin.includes('localhost');
+    const isSubdomain = isTerVnSubdomain(origin);
+    
     const isAllowedOrigin = allowedOrigins.some(allowed => {
       if (typeof allowed === 'string') {
         return origin === allowed || origin.startsWith(allowed);
@@ -65,9 +86,24 @@ app.use(cors({
       return false;
     });
     
-    if (isLocalhost || isAllowedOrigin) {
+    // Log for debugging (only in development or when CORS fails)
+    if (process.env.NODE_ENV !== 'production' || !isLocalhost && !isAllowedOrigin && !isSubdomain) {
+      console.log('CORS check:', {
+        origin,
+        isLocalhost,
+        isSubdomain,
+        isAllowedOrigin,
+        allowedOrigins,
+      });
+    }
+    
+    if (isLocalhost || isAllowedOrigin || isSubdomain) {
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('CORS allowed:', origin);
+      }
       callback(null, true);
     } else {
+      console.error('CORS blocked origin:', origin);
       callback(new Error('Not allowed by CORS'));
     }
   },
@@ -77,7 +113,9 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Cookie'],
   preflightContinue: false,
   optionsSuccessStatus: 204,
-}));
+};
+
+app.use(cors(corsOptions));
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
