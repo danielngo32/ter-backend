@@ -2195,37 +2195,101 @@ const importProducts = async (req, res, next) => {
       products: [],
     };
 
-    const skuSet = new Set();
-    const variantSkuSet = new Set();
-    const barcodeSet = new Set();
-
+    // Step 1: Normalize all rows first
+    const normalizedRows = [];
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
       try {
         const productData = normalizeProductData(row, user.tenantId, userId);
-        
         const validationErrors = validateProductRow(productData, i);
+        
         if (validationErrors.length > 0) {
           if (options.missingRequiredFieldAction === 'stop') {
             results.failed++;
             results.errors.push(...validationErrors);
             results.errors.push(`Row ${i + 1}: Import stopped due to validation errors.`);
-            break;
+            return res.json({
+              success: false,
+              message: `Import stopped at row ${i + 1}`,
+              data: results,
+            });
           } else {
             results.failed++;
             results.errors.push(...validationErrors);
             continue;
           }
         }
+        
+        normalizedRows.push({
+          rowIndex: i + 1,
+          productData,
+          originalRow: row,
+        });
+      } catch (error) {
+        results.failed++;
+        results.errors.push(`Row ${i + 1}: ${error.message}`);
+      }
+    }
 
+    // Step 2: Group rows by product key (for variants)
+    // Product key = name + sku + categoryName + parentCategoryName + brandName + images
+    const getProductKey = (productData) => {
+      const images = (productData.images || []).map(img => 
+        typeof img === 'string' ? img : img.url
+      ).sort().join('|');
+      
+      return [
+        (productData.name || '').trim().toLowerCase(),
+        (productData.sku || '').trim().toLowerCase(),
+        (productData.categoryName || '').trim().toLowerCase(),
+        (productData.parentCategoryName || '').trim().toLowerCase(),
+        (productData.brandName || '').trim().toLowerCase(),
+        images,
+      ].join('|||');
+    };
+
+    const productGroups = new Map();
+    const variantRows = [];
+    const nonVariantRows = [];
+
+    for (const normalizedRow of normalizedRows) {
+      const { productData } = normalizedRow;
+      
+      if (productData.variantData) {
+        // Has variant - group by product key
+        const key = getProductKey(productData);
+        if (!productGroups.has(key)) {
+          productGroups.set(key, []);
+        }
+        productGroups.get(key).push(normalizedRow);
+      } else {
+        // No variant - process separately
+        nonVariantRows.push(normalizedRow);
+      }
+    }
+
+    const skuSet = new Set();
+    const variantSkuSet = new Set();
+    const barcodeSet = new Set();
+
+    // Step 3: Process non-variant products
+    for (const normalizedRow of nonVariantRows) {
+      const { rowIndex, productData } = normalizedRow;
+      
+      try {
+        // Check SKU duplicate
         if (skuSet.has(productData.sku)) {
           if (options.duplicateSkuAction === 'stop') {
             results.failed++;
-            results.errors.push(`Row ${i + 1}: SKU "${productData.sku}" is duplicated in the file. Import stopped.`);
-            break;
+            results.errors.push(`Row ${rowIndex}: SKU "${productData.sku}" is duplicated in the file. Import stopped.`);
+            return res.json({
+              success: false,
+              message: `Import stopped at row ${rowIndex}`,
+              data: results,
+            });
           } else if (options.duplicateSkuAction === 'skip') {
             results.failed++;
-            results.errors.push(`Row ${i + 1}: SKU "${productData.sku}" is duplicated in the file. Skipped.`);
+            results.errors.push(`Row ${rowIndex}: SKU "${productData.sku}" is duplicated in the file. Skipped.`);
             continue;
           } else if (options.duplicateSkuAction === 'replace') {
             const timestamp = Date.now().toString().slice(-6);
@@ -2237,11 +2301,15 @@ const importProducts = async (req, res, next) => {
         if (existingProduct) {
           if (options.duplicateSkuAction === 'stop') {
             results.failed++;
-            results.errors.push(`Row ${i + 1}: SKU "${productData.sku}" already exists. Import stopped.`);
-            break;
+            results.errors.push(`Row ${rowIndex}: SKU "${productData.sku}" already exists. Import stopped.`);
+            return res.json({
+              success: false,
+              message: `Import stopped at row ${rowIndex}`,
+              data: results,
+            });
           } else if (options.duplicateSkuAction === 'skip') {
             results.failed++;
-            results.errors.push(`Row ${i + 1}: SKU "${productData.sku}" already exists. Skipped.`);
+            results.errors.push(`Row ${rowIndex}: SKU "${productData.sku}" already exists. Skipped.`);
             continue;
           } else if (options.duplicateSkuAction === 'replace') {
             const timestamp = Date.now().toString().slice(-6);
@@ -2254,11 +2322,15 @@ const importProducts = async (req, res, next) => {
           if (barcodeSet.has(barcode)) {
             if (options.duplicateBarcodeAction === 'stop') {
               results.failed++;
-              results.errors.push(`Row ${i + 1}: Barcode "${barcode}" is duplicated in the file. Import stopped.`);
-              break;
+              results.errors.push(`Row ${rowIndex}: Barcode "${barcode}" is duplicated in the file. Import stopped.`);
+              return res.json({
+                success: false,
+                message: `Import stopped at row ${rowIndex}`,
+                data: results,
+              });
             } else if (options.duplicateBarcodeAction === 'skip') {
               results.failed++;
-              results.errors.push(`Row ${i + 1}: Barcode "${barcode}" is duplicated in the file. Skipped.`);
+              results.errors.push(`Row ${rowIndex}: Barcode "${barcode}" is duplicated in the file. Skipped.`);
               continue;
             } else if (options.duplicateBarcodeAction === 'replace') {
               productData.baseBarcodes = [];
@@ -2268,11 +2340,15 @@ const importProducts = async (req, res, next) => {
             if (existingBarcode) {
               if (options.duplicateBarcodeAction === 'stop') {
                 results.failed++;
-                results.errors.push(`Row ${i + 1}: Barcode "${barcode}" already exists. Import stopped.`);
-                break;
+                results.errors.push(`Row ${rowIndex}: Barcode "${barcode}" already exists. Import stopped.`);
+                return res.json({
+                  success: false,
+                  message: `Import stopped at row ${rowIndex}`,
+                  data: results,
+                });
               } else if (options.duplicateBarcodeAction === 'skip') {
                 results.failed++;
-                results.errors.push(`Row ${i + 1}: Barcode "${barcode}" already exists. Skipped.`);
+                results.errors.push(`Row ${rowIndex}: Barcode "${barcode}" already exists. Skipped.`);
                 continue;
               } else if (options.duplicateBarcodeAction === 'replace') {
                 productData.baseBarcodes = [];
@@ -2295,11 +2371,15 @@ const importProducts = async (req, res, next) => {
         } catch (error) {
           if (options.duplicateCategoryAction === 'stop') {
             results.failed++;
-            results.errors.push(`Row ${i + 1}: Failed to process category: ${error.message}. Import stopped.`);
-            break;
+            results.errors.push(`Row ${rowIndex}: Failed to process category: ${error.message}. Import stopped.`);
+            return res.json({
+              success: false,
+              message: `Import stopped at row ${rowIndex}`,
+              data: results,
+            });
           } else {
             results.failed++;
-            results.errors.push(`Row ${i + 1}: Failed to process category: ${error.message}. Skipped.`);
+            results.errors.push(`Row ${rowIndex}: Failed to process category: ${error.message}. Skipped.`);
             continue;
           }
         }
@@ -2314,11 +2394,15 @@ const importProducts = async (req, res, next) => {
         } catch (error) {
           if (options.duplicateBrandAction === 'stop') {
             results.failed++;
-            results.errors.push(`Row ${i + 1}: Failed to process brand: ${error.message}. Import stopped.`);
-            break;
+            results.errors.push(`Row ${rowIndex}: Failed to process brand: ${error.message}. Import stopped.`);
+            return res.json({
+              success: false,
+              message: `Import stopped at row ${rowIndex}`,
+              data: results,
+            });
           } else {
             results.failed++;
-            results.errors.push(`Row ${i + 1}: Failed to process brand: ${error.message}. Skipped.`);
+            results.errors.push(`Row ${rowIndex}: Failed to process brand: ${error.message}. Skipped.`);
             continue;
           }
         }
@@ -2332,44 +2416,191 @@ const importProducts = async (req, res, next) => {
           productData.images = productData.images.slice(0, 5);
         }
 
-        if (productData.variantData) {
-          productData.hasVariants = true;
+        productData.hasVariants = false;
+        productData.variants = [];
+
+        skuSet.add(productData.sku);
+
+        const product = await productRepository.createProduct(productData);
+        results.success++;
+        results.products.push({
+          _id: product._id,
+          name: product.name,
+          sku: product.sku,
+        });
+      } catch (error) {
+        results.failed++;
+        const errorMessage = error.message || 'Unknown error';
+        results.errors.push(`Row ${rowIndex}: ${errorMessage}`);
+      }
+    }
+
+    // Step 4: Process variant products (grouped)
+    for (const [productKey, groupRows] of productGroups.entries()) {
+      if (groupRows.length === 0) continue;
+
+      try {
+        // Use first row as base for product info
+        const baseRow = groupRows[0];
+        const baseProductData = { ...baseRow.productData };
+
+        // Check if base SKU already exists
+        if (skuSet.has(baseProductData.sku)) {
+          if (options.duplicateSkuAction === 'stop') {
+            results.failed += groupRows.length;
+            results.errors.push(`Rows ${groupRows.map(r => r.rowIndex).join(', ')}: SKU "${baseProductData.sku}" is duplicated. Import stopped.`);
+            return res.json({
+              success: false,
+              message: `Import stopped`,
+              data: results,
+            });
+          } else if (options.duplicateSkuAction === 'skip') {
+            results.failed += groupRows.length;
+            results.errors.push(`Rows ${groupRows.map(r => r.rowIndex).join(', ')}: SKU "${baseProductData.sku}" is duplicated. Skipped.`);
+            continue;
+          } else if (options.duplicateSkuAction === 'replace') {
+            const timestamp = Date.now().toString().slice(-6);
+            baseProductData.sku = `${baseProductData.sku}-${timestamp}`;
+          }
+        }
+
+        const existingProduct = await productRepository.findProductBySku(user.tenantId, baseProductData.sku);
+        if (existingProduct) {
+          if (options.duplicateSkuAction === 'stop') {
+            results.failed += groupRows.length;
+            results.errors.push(`Rows ${groupRows.map(r => r.rowIndex).join(', ')}: SKU "${baseProductData.sku}" already exists. Import stopped.`);
+            return res.json({
+              success: false,
+              message: `Import stopped`,
+              data: results,
+            });
+          } else if (options.duplicateSkuAction === 'skip') {
+            results.failed += groupRows.length;
+            results.errors.push(`Rows ${groupRows.map(r => r.rowIndex).join(', ')}: SKU "${baseProductData.sku}" already exists. Skipped.`);
+            continue;
+          } else if (options.duplicateSkuAction === 'replace') {
+            const timestamp = Date.now().toString().slice(-6);
+            baseProductData.sku = `${baseProductData.sku}-${timestamp}`;
+          }
+        }
+
+        // Process category and brand
+        try {
+          baseProductData.categoryId = await findOrCreateCategory(
+            user.tenantId,
+            baseProductData.categoryName,
+            baseProductData.categoryId,
+            baseProductData.parentCategoryName,
+            baseProductData.parentCategoryId,
+            options.duplicateCategoryAction
+          );
+        } catch (error) {
+          results.failed += groupRows.length;
+          results.errors.push(`Rows ${groupRows.map(r => r.rowIndex).join(', ')}: Failed to process category: ${error.message}`);
+          continue;
+        }
+
+        try {
+          baseProductData.brandId = await findOrCreateBrand(
+            user.tenantId,
+            baseProductData.brandName,
+            baseProductData.brandId,
+            options.duplicateBrandAction
+          );
+        } catch (error) {
+          results.failed += groupRows.length;
+          results.errors.push(`Rows ${groupRows.map(r => r.rowIndex).join(', ')}: Failed to process brand: ${error.message}`);
+          continue;
+        }
+
+        delete baseProductData.categoryName;
+        delete baseProductData.parentCategoryName;
+        delete baseProductData.parentCategoryId;
+        delete baseProductData.brandName;
+
+        if (baseProductData.images && baseProductData.images.length > 5) {
+          baseProductData.images = baseProductData.images.slice(0, 5);
+        }
+
+        // Process all variants from group
+        const variants = [];
+        const variantSkusInGroup = new Set();
+
+        for (const normalizedRow of groupRows) {
+          const { rowIndex, productData } = normalizedRow;
           const variantData = productData.variantData;
+          
+          if (!variantData || !variantData.sku) {
+            results.failed++;
+            results.errors.push(`Row ${rowIndex}: Variant SKU is required`);
+            continue;
+          }
+
           const variantSku = variantData.sku.trim();
 
-          if (variantSkuSet.has(variantSku)) {
+          // Check duplicate variant SKU within group
+          if (variantSkusInGroup.has(variantSku)) {
             if (options.duplicateVariantSkuAction === 'stop') {
-              results.failed++;
-              results.errors.push(`Row ${i + 1}: Variant SKU "${variantSku}" is duplicated in the file. Import stopped.`);
-              break;
+              results.failed += groupRows.length;
+              results.errors.push(`Row ${rowIndex}: Variant SKU "${variantSku}" is duplicated in the same product group. Import stopped.`);
+              return res.json({
+                success: false,
+                message: `Import stopped at row ${rowIndex}`,
+                data: results,
+              });
             } else if (options.duplicateVariantSkuAction === 'skip') {
               results.failed++;
-              results.errors.push(`Row ${i + 1}: Variant SKU "${variantSku}" is duplicated in the file. Skipped.`);
+              results.errors.push(`Row ${rowIndex}: Variant SKU "${variantSku}" is duplicated in the same product group. Skipped.`);
               continue;
             } else if (options.duplicateVariantSkuAction === 'replace') {
               const timestamp = Date.now().toString().slice(-6);
               variantData.sku = `${variantSku}-${timestamp}`;
             }
           }
-          
+
+          // Check duplicate variant SKU globally
+          if (variantSkuSet.has(variantSku)) {
+            if (options.duplicateVariantSkuAction === 'stop') {
+              results.failed += groupRows.length;
+              results.errors.push(`Row ${rowIndex}: Variant SKU "${variantSku}" is duplicated in the file. Import stopped.`);
+              return res.json({
+                success: false,
+                message: `Import stopped at row ${rowIndex}`,
+                data: results,
+              });
+            } else if (options.duplicateVariantSkuAction === 'skip') {
+              results.failed++;
+              results.errors.push(`Row ${rowIndex}: Variant SKU "${variantSku}" is duplicated in the file. Skipped.`);
+              continue;
+            } else if (options.duplicateVariantSkuAction === 'replace') {
+              const timestamp = Date.now().toString().slice(-6);
+              variantData.sku = `${variantSku}-${timestamp}`;
+            }
+          }
+
           const existingVariantProduct = await productRepository.findProductBySku(user.tenantId, variantData.sku);
           if (existingVariantProduct) {
             if (options.duplicateVariantSkuAction === 'stop') {
-              results.failed++;
-              results.errors.push(`Row ${i + 1}: Variant SKU "${variantData.sku}" already exists. Import stopped.`);
-              break;
+              results.failed += groupRows.length;
+              results.errors.push(`Row ${rowIndex}: Variant SKU "${variantData.sku}" already exists. Import stopped.`);
+              return res.json({
+                success: false,
+                message: `Import stopped at row ${rowIndex}`,
+                data: results,
+              });
             } else if (options.duplicateVariantSkuAction === 'skip') {
               results.failed++;
-              results.errors.push(`Row ${i + 1}: Variant SKU "${variantData.sku}" already exists. Skipped.`);
+              results.errors.push(`Row ${rowIndex}: Variant SKU "${variantData.sku}" already exists. Skipped.`);
               continue;
             } else if (options.duplicateVariantSkuAction === 'replace') {
               const timestamp = Date.now().toString().slice(-6);
               variantData.sku = `${variantData.sku}-${timestamp}`;
             }
           }
-          
+
+          variantSkusInGroup.add(variantData.sku);
           variantSkuSet.add(variantData.sku);
-          
+
           const variantAttributes = await parseVariantAttributes(
             user.tenantId,
             variantData.attributesString
@@ -2377,12 +2608,12 @@ const importProducts = async (req, res, next) => {
 
           if (variantAttributes.length === 0) {
             results.failed++;
-            results.errors.push(`Row ${i + 1}: Variant must have at least one attribute`);
+            results.errors.push(`Row ${rowIndex}: Variant must have at least one attribute`);
             continue;
           }
 
           const variant = {
-            sku: variantSku,
+            sku: variantData.sku,
             barcodes: variantData.barcode ? [{ code: variantData.barcode.trim(), isPrimary: true }] : [],
             attributes: variantAttributes,
             pricing: {
@@ -2402,41 +2633,47 @@ const importProducts = async (req, res, next) => {
             const variantBarcode = variant.barcodes[0].code;
             if (barcodeSet.has(variantBarcode)) {
               results.failed++;
-              results.errors.push(`Row ${i + 1}: Variant barcode "${variantBarcode}" is duplicated in the file`);
+              results.errors.push(`Row ${rowIndex}: Variant barcode "${variantBarcode}" is duplicated in the file`);
               continue;
             }
 
             const existingBarcode = await productRepository.findProductByBarcode(user.tenantId, variantBarcode);
             if (existingBarcode) {
               results.failed++;
-              results.errors.push(`Row ${i + 1}: Variant barcode "${variantBarcode}" already exists`);
+              results.errors.push(`Row ${rowIndex}: Variant barcode "${variantBarcode}" already exists`);
               continue;
             }
             barcodeSet.add(variantBarcode);
           }
 
-          productData.variants = [variant];
-          productData.baseBarcodes = [];
-        } else {
-          productData.hasVariants = false;
-          productData.variants = [];
+          variants.push(variant);
         }
 
-        delete productData.variantData;
+        if (variants.length === 0) {
+          results.failed += groupRows.length;
+          results.errors.push(`Rows ${groupRows.map(r => r.rowIndex).join(', ')}: No valid variants found`);
+          continue;
+        }
 
-        skuSet.add(productData.sku);
+        // Create product with all variants
+        baseProductData.hasVariants = true;
+        baseProductData.variants = variants;
+        baseProductData.baseBarcodes = [];
 
-        const product = await productRepository.createProduct(productData);
+        skuSet.add(baseProductData.sku);
+
+        const product = await productRepository.createProduct(baseProductData);
         results.success++;
         results.products.push({
           _id: product._id,
           name: product.name,
           sku: product.sku,
+          variantsCount: variants.length,
         });
       } catch (error) {
-        results.failed++;
+        results.failed += groupRows.length;
         const errorMessage = error.message || 'Unknown error';
-        results.errors.push(`Row ${i + 1}: ${errorMessage}`);
+        results.errors.push(`Rows ${groupRows.map(r => r.rowIndex).join(', ')}: ${errorMessage}`);
       }
     }
 
