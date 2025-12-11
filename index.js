@@ -20,6 +20,7 @@ const tenantRoutes = require('./routes/tenant.routes');
 const storageRoutes = require('./routes/storage.routes');
 const crmRoutes = require('./routes/crm.routes');
 const aiRoutes = require('./routes/ai.routes');
+const orderRoutes = require('./routes/order.routes');
 
 const app = express();
 const port = process.env.PORT;
@@ -138,6 +139,7 @@ app.use('/api/tenants', tenantRoutes);
 app.use('/api/storage', storageRoutes);
 app.use('/api/crm', crmRoutes);
 app.use('/api/ai', aiRoutes);
+app.use('/api/orders', orderRoutes);
 
 app.use((req, res, next) => {
   next(new ApiError(404, 'Route not found'));

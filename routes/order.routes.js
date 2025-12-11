@@ -1,8 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const orderController = require('../controllers/order.controller');
-const { validate } = require('../middlewares/validate'); // assuming a validate middleware exists
-const { createOrderSchema, updateOrderSchema, listQuerySchema } = require('../validators/order.validator');
+const { validateCreateOrder, validateUpdateOrder, validateListOrdersQuery } = require('../validators/order.validator');
 const authHelper = require('../utils/authHelper');
 const ApiError = require('../utils/apiError');
 
@@ -25,8 +24,8 @@ const requireAuth = (req, res, next) => {
 };
 
 // Routes
-router.post('/', requireAuth, validate(createOrderSchema), orderController.createOrder);
-router.get('/', requireAuth, validate(listQuerySchema, 'query'), orderController.listOrders);
+router.post('/', requireAuth, validateCreateOrder, orderController.createOrder);
+router.get('/', requireAuth, validateListOrdersQuery, orderController.listOrders);
 router.get('/by-number/:orderNumber', requireAuth, orderController.getOrderByNumber);
 router.get('/customer/:customerId', requireAuth, orderController.getOrdersByCustomer);
 router.get('/status/:status', requireAuth, orderController.getOrdersByStatus);
@@ -34,7 +33,7 @@ router.get('/unpaid', requireAuth, orderController.getUnpaidOrders);
 router.get('/unfulfilled', requireAuth, orderController.getUnfulfilledOrders);
 router.get('/stats', requireAuth, orderController.getOrderStatistics);
 router.get('/:id', requireAuth, orderController.getOrderById);
-router.patch('/:id', requireAuth, validate(updateOrderSchema), orderController.updateOrder);
+router.patch('/:id', requireAuth, validateUpdateOrder, orderController.updateOrder);
 router.delete('/:id', requireAuth, orderController.deleteOrder);
 
 module.exports = router;

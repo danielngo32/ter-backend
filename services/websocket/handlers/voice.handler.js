@@ -489,12 +489,22 @@ const handleVoiceStop = async (socket, data) => {
             const result = JSON.parse(toolResult.content);
             console.log('[Voice Handler] 📦 calculate_order_total result:', JSON.stringify(result, null, 2));
             if (result && result.items && Array.isArray(result.items)) {
-              voiceOrder.session.cartItems = result.items;
-              voiceOrder.session.total = result.grandTotal || 0;
-              // Include cart items in response for UI display
-              responseData.cartItems = result.items;
-              responseData.total = result.grandTotal || 0;
-              console.log('[Voice Handler] ✅ Updated cart items:', result.items.length, 'items, total:', result.grandTotal);
+              // QUAN TRỌNG: Chỉ cập nhật cart nếu có items (không được xóa giỏ hàng trừ khi tạo đơn)
+              // Nếu items rỗng và không phải là order created, giữ nguyên giỏ hàng hiện tại
+              const currentCartItems = voiceOrder.session.cartItems || [];
+              if (result.items.length > 0 || currentCartItems.length === 0) {
+                voiceOrder.session.cartItems = result.items;
+                voiceOrder.session.total = result.grandTotal || 0;
+                // Include cart items in response for UI display
+                responseData.cartItems = result.items;
+                responseData.total = result.grandTotal || 0;
+                console.log('[Voice Handler] ✅ Updated cart items:', result.items.length, 'items, total:', result.grandTotal);
+              } else {
+                // Giữ nguyên giỏ hàng hiện tại nếu AI trả về empty array (có thể là lỗi)
+                console.warn('[Voice Handler] ⚠️ AI returned empty items but cart has items. Keeping existing cart.');
+                responseData.cartItems = currentCartItems;
+                responseData.total = voiceOrder.session.total || 0;
+              }
             }
           } catch (parseError) {
             console.warn('[Voice Handler] ❌ Failed to parse calculate_order_total result:', parseError);

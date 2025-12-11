@@ -2232,7 +2232,6 @@ const importProducts = async (req, res, next) => {
     }
 
     // Step 2: Group rows by product key (for variants)
-    // Product key = name + sku + categoryName + parentCategoryName + brandName + images
     const getProductKey = (productData) => {
       const images = (productData.images || []).map(img => 
         typeof img === 'string' ? img : img.url
@@ -2277,7 +2276,6 @@ const importProducts = async (req, res, next) => {
       const { rowIndex, productData } = normalizedRow;
       
       try {
-        // Check SKU duplicate
         if (skuSet.has(productData.sku)) {
           if (options.duplicateSkuAction === 'stop') {
             results.failed++;
@@ -2440,11 +2438,9 @@ const importProducts = async (req, res, next) => {
       if (groupRows.length === 0) continue;
 
       try {
-        // Use first row as base for product info
         const baseRow = groupRows[0];
         const baseProductData = { ...baseRow.productData };
 
-        // Check if base SKU already exists
         if (skuSet.has(baseProductData.sku)) {
           if (options.duplicateSkuAction === 'stop') {
             results.failed += groupRows.length;

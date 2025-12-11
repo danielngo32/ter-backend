@@ -197,15 +197,31 @@ const buildPayments = (payments = []) => {
   for (const p of payments) {
     const amt = p.amount || 0;
     if (amt > 0) {
+      const method = p.method || 'cash';
+      // Check if this is a pending payment (bank transfer waiting for confirmation)
+      // If receivedAt is explicitly null/undefined, or note indicates pending, it's not paid yet
+      const isPending = p.receivedAt === null || 
+                       p.receivedAt === undefined || 
+                       (method === 'bank_transfer' && p.note?.includes('Chờ xác nhận'));
+      
+      // For pending payments, don't set receivedAt (let schema use default for DB, but don't count as paid)
+      // For paid payments, use provided receivedAt or current date
+      const receivedAt = isPending ? undefined : (p.receivedAt ? new Date(p.receivedAt) : new Date());
+      
       orderPayments.push({
-        method: p.method || 'cash',
+        method: method,
         partnerId: p.partnerId || null,
         amount: amt,
         referenceCode: p.referenceCode || null,
         note: p.note || null,
-        receivedAt: p.receivedAt ? new Date(p.receivedAt) : new Date(),
+        receivedAt: receivedAt, // undefined for pending, will use schema default but we track separately
       });
-      paidTotal += amt;
+      
+      // Only add to paidTotal if payment is actually received (not pending)
+      // For bank transfer with pending status, don't count as paid
+      if (!isPending) {
+        paidTotal += amt;
+      }
     }
   }
   return { orderPayments, paidTotal };
@@ -219,57 +235,50 @@ const decidePaymentStatus = (grandTotal, paidTotal) => {
 
 const ensureCustomer = async ({ tenantId, userId, customerId, customerName, customerPhone, customerEmail }) => {
   let finalCustomerId = customerId;
-  if (!finalCustomerId && (customerName || customerPhone || customerEmail)) {
-    if (customerPhone || customerEmail) {
-      const existing = await crmRepository.findCustomerByPhonesOrEmails(
-        tenantId,
-        customerPhone,
-        null,
-        customerEmail,
-        null
-      );
-      if (existing) {
-        finalCustomerId = existing._id.toString();
-      } else {
-        const payload = {
-          tenantId,
-          name: customerName || 'Khách hàng',
-          phone1: customerPhone || null,
-          email1: customerEmail || null,
-          createdBy: userId,
-        };
-        const newCustomer = await crmRepository.createCustomer(payload);
-        await crmRepository.CustomerModel.findByIdAndUpdate(
-          newCustomer._id,
-          { $unset: { updatedAt: 1, updatedBy: 1 } },
-          { timestamps: false }
-        );
-        if (!newCustomer.avatarUrl && newCustomer.name) {
-          newCustomer.avatarUrl = generateDefaultAvatarUrl(newCustomer.name);
-          await newCustomer.save();
-        }
-        finalCustomerId = newCustomer._id.toString();
-      }
-    } else if (customerName) {
-      const payload = {
-        tenantId,
-        name: customerName,
-        createdBy: userId,
-      };
-      const newCustomer = await crmRepository.createCustomer(payload);
-      await crmRepository.CustomerModel.findByIdAndUpdate(
-        newCustomer._id,
-        { $unset: { updatedAt: 1, updatedBy: 1 } },
-        { timestamps: false }
-      );
-      if (!newCustomer.avatarUrl && newCustomer.name) {
-        newCustomer.avatarUrl = generateDefaultAvatarUrl(newCustomer.name);
-        await newCustomer.save();
-      }
-      finalCustomerId = newCustomer._id.toString();
+  
+  // If customerId is provided, use it
+  if (finalCustomerId) {
+    return finalCustomerId;
+  }
+  
+  // If we have customer contact info (phone or email), try to find existing customer
+  if (customerPhone || customerEmail) {
+    const existing = await crmRepository.findCustomerByPhonesOrEmails(
+      tenantId,
+      customerPhone,
+      null,
+      customerEmail,
+      null
+    );
+    if (existing) {
+      return existing._id.toString();
     }
   }
-  return finalCustomerId || null;
+  
+  // Create customer - use provided name or default to "Khách vãng lai"
+  const customerNameToUse = customerName?.trim() || 'Khách vãng lai';
+  
+  const payload = {
+    tenantId,
+    name: customerNameToUse,
+    phone1: customerPhone || null,
+    email1: customerEmail || null,
+    createdBy: userId,
+  };
+  
+  const newCustomer = await crmRepository.createCustomer(payload);
+  await crmRepository.CustomerModel.findByIdAndUpdate(
+    newCustomer._id,
+    { $unset: { updatedAt: 1, updatedBy: 1 } },
+    { timestamps: false }
+  );
+  
+  if (!newCustomer.avatarUrl && newCustomer.name) {
+    newCustomer.avatarUrl = generateDefaultAvatarUrl(newCustomer.name);
+    await newCustomer.save();
+  }
+  
+  return newCustomer._id.toString();
 };
 
 // --- Controllers ---
@@ -330,6 +339,15 @@ const createOrder = async (req, res, next) => {
         : null;
     const finalOrderType = shippingAddress ? 'shipping' : orderType;
 
+    // Determine quickSale: 
+    // 1. Has items without productId (manual items)
+    // 2. OR no customer info was provided initially (customerName empty and no phone/email)
+    // Note: finalCustomerId will always exist (created as "Khách vãng lai" if needed),
+    // so we check the original input, not finalCustomerId
+    const hasManualItems = totals.items.some((it) => !it.productId);
+    const hadNoCustomerInfo = !customerId && !customerName?.trim() && !customerPhone && !customerEmail;
+    const isQuickSale = hasManualItems || hadNoCustomerInfo;
+
     const orderPayload = {
       tenantId,
       orderNumber,
@@ -337,7 +355,7 @@ const createOrder = async (req, res, next) => {
       status,
       paymentStatus,
       fulfillmentStatus: 'unfulfilled',
-      quickSale: totals.items.some((it) => !it.productId),
+      quickSale: isQuickSale,
       notes: notes || null,
       customerId: finalCustomerId,
       salesPersonId: salesPersonId || null,

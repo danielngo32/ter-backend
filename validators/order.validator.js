@@ -16,7 +16,7 @@ const paymentSchema = Joi.object({
   amount: Joi.number().min(0).required(),
   referenceCode: Joi.string().allow('', null),
   note: Joi.string().allow('', null),
-  receivedAt: Joi.date().optional(),
+  receivedAt: Joi.date().allow(null).optional(),
 });
 
 const shippingSchema = Joi.object({
@@ -38,7 +38,10 @@ const createOrderSchema = Joi.object({
   customerId: Joi.string().allow(null),
   customerName: Joi.string().allow('', null),
   customerPhone: Joi.string().allow('', null),
-  customerEmail: Joi.string().email().allow('', null),
+  customerEmail: Joi.alternatives().try(
+    Joi.string().email(),
+    Joi.string().allow('', null)
+  ).allow(null),
   orderType: Joi.string().valid('normal', 'shipping').default('normal'),
   status: Joi.string().valid('draft', 'confirmed', 'fulfilled', 'cancelled').default('confirmed'),
   notes: Joi.string().allow('', null),
@@ -91,9 +94,44 @@ const listQuerySchema = Joi.object({
   limit: Joi.number().integer().min(1).max(200).default(50),
 });
 
+// Validation middleware functions
+const validate = (schema) => async (req, res, next) => {
+  try {
+    const value = await schema.validateAsync(req.body, { abortEarly: false, stripUnknown: true });
+    req.body = value;
+    next();
+  } catch (error) {
+    res.status(400).json({
+      message: 'Validation failed',
+      details: error.details?.map((d) => d.message) || [],
+    });
+  }
+};
+
+const validateQuery = (schema) => async (req, res, next) => {
+  try {
+    const value = await schema.validateAsync(req.query, { abortEarly: false, stripUnknown: true });
+    req.query = value;
+    next();
+  } catch (error) {
+    res.status(400).json({
+      message: 'Validation failed',
+      details: error.details?.map((d) => d.message) || [],
+    });
+  }
+};
+
+// Export validation functions
+const validateCreateOrder = validate(createOrderSchema);
+const validateUpdateOrder = validate(updateOrderSchema);
+const validateListOrdersQuery = validateQuery(listQuerySchema);
+
 module.exports = {
   createOrderSchema,
   updateOrderSchema,
   listQuerySchema,
+  validateCreateOrder,
+  validateUpdateOrder,
+  validateListOrdersQuery,
 };
 

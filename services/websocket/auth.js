@@ -50,8 +50,8 @@ const authenticateSocket = async (socket, next) => {
       console.error('[WebSocket Auth] Handshake auth:', JSON.stringify(socket.handshake.auth, null, 2));
       console.error('[WebSocket Auth] Handshake query:', JSON.stringify(socket.handshake.query, null, 2));
       console.error('[WebSocket Auth] Handshake headers keys:', Object.keys(socket.handshake.headers || {}));
-      if (socket.handshake.headers?.cookie) {
-        const cookies = parseCookies(socket.handshake.headers.cookie);
+        if (socket.handshake.headers?.cookie) {
+          const cookies = parseCookies(socket.handshake.headers.cookie);
         console.error('[WebSocket Auth] Cookies:', Object.keys(cookies));
       }
       return next(new Error('Authentication token missing'));

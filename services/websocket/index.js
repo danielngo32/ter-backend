@@ -1,6 +1,7 @@
 const { CORS_CONFIG, CONNECTION_SETTINGS } = require('../../config/websocket');
 const { authenticateSocket } = require('./auth');
 const voiceHandlers = require('./handlers/voice.handler');
+const chatHandlers = require('./handlers/chat.handler');
 
 const setupWebSocket = (io) => {
   io.use(authenticateSocket);
@@ -43,6 +44,27 @@ const setupWebSocket = (io) => {
     socket.on('cart_update', (data) => {
       console.log(`[WebSocket] 🛒 cart_update event received from ${socket.id}, orderSessionId: ${data?.orderSessionId || 'N/A'}`);
       voiceHandlers.handleCartUpdate(socket, data);
+    });
+
+    // Chat handlers
+    socket.on('chat_start', (data) => {
+      console.log(`[WebSocket] 💬 chat_start event received from ${socket.id}`);
+      chatHandlers.handleChatStart(socket, data);
+    });
+
+    socket.on('chat_message', (data) => {
+      console.log(`[WebSocket] 💬 chat_message event received from ${socket.id}, chatSessionId: ${data?.chatSessionId || 'N/A'}`);
+      chatHandlers.handleChatMessage(socket, data);
+    });
+
+    socket.on('chat_cancel', (data) => {
+      console.log(`[WebSocket] ❌ chat_cancel event received from ${socket.id}, chatSessionId: ${data?.chatSessionId || 'N/A'}`);
+      chatHandlers.handleChatCancel(socket, data);
+    });
+
+    socket.on('chat_cart_update', (data) => {
+      console.log(`[WebSocket] 🛒 chat_cart_update event received from ${socket.id}, orderSessionId: ${data?.orderSessionId || 'N/A'}`);
+      chatHandlers.handleCartUpdate(socket, data);
     });
 
     socket.on('disconnect', (reason) => {

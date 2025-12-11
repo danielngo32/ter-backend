@@ -758,6 +758,7 @@ const calculatePaymentChange = async (args, context) => {
 };
 
 module.exports = {
+  buildOrderFilter,
   calculateOrderTotal,
   getOrderById,
   getOrderByOrderNumber,

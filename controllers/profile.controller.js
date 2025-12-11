@@ -501,6 +501,21 @@ const uploadAvatar = async (req, res, next) => {
       throw new ApiError(404, 'User or tenant not found');
     }
 
+    console.log('Upload avatar request:', {
+      hasFile: !!req.file,
+      file: req.file ? {
+        fieldname: req.file.fieldname,
+        originalname: req.file.originalname,
+        mimetype: req.file.mimetype,
+        size: req.file.size,
+      } : null,
+      body: req.body,
+      headers: {
+        'content-type': req.headers['content-type'],
+        'content-length': req.headers['content-length'],
+      },
+    });
+
     if (!req.file) {
       throw new ApiError(400, 'No file uploaded');
     }
@@ -523,9 +538,9 @@ const uploadAvatar = async (req, res, next) => {
     });
 
     const url = await uploadFile(req.file.buffer, key, req.file.mimetype);
-    await userRepository.updateProfile(userId, { avatarUrl: url });
+    const updatedUser = await userRepository.updateProfile(userId, { avatarUrl: url });
 
-    res.json({ url, key });
+    res.json(authHelper.sanitizeUser(updatedUser));
   } catch (error) {
     next(error);
   }

@@ -53,7 +53,7 @@ const CORS_CONFIG = {
       console.error('[WebSocket CORS] ❌ Origin missing and WEBSOCKET_ALLOW_NO_ORIGIN is not enabled');
       return callback(new Error('Origin missing and WEBSOCKET_ALLOW_NO_ORIGIN is not enabled'));
     }
-
+    
     // Production: strict check
     if (allowedOrigins.length === 0) {
       console.error('[WebSocket CORS] ❌ No allowed origins configured');

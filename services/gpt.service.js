@@ -1,6 +1,6 @@
 const { openaiClient, DEFAULT_MODELS, DEFAULT_SETTINGS, isOpenAIAvailable } = require('../config/openai');
 const { getToolDefinitions, executeTool } = require('./tools');
-const { getVoiceOrderSystemPrompt, getGeneralChatSystemPrompt } = require('./prompts');
+const { getVoiceOrderSystemPrompt, getGeneralChatSystemPrompt, getProductChatSystemPrompt } = require('./prompts');
 const ApiError = require('../utils/apiError');
 
 const chatCompletion = async (messages, options = {}) => {
@@ -23,6 +23,19 @@ const chatCompletion = async (messages, options = {}) => {
     let systemPrompt = '';
     if (promptType === 'voice_order') {
       systemPrompt = getVoiceOrderSystemPrompt();
+    } else if (promptType === 'product_chat') {
+      systemPrompt = getProductChatSystemPrompt();
+      
+      // Add current cart information to system prompt if available
+      if (context.currentCartItems && Array.isArray(context.currentCartItems) && context.currentCartItems.length > 0) {
+        const cartInfo = `\n\n## GIỎ HÀNG HIỆN TẠI (QUAN TRỌNG - ĐỌC KỸ):
+- **BẮT BUỘC**: Giỏ hàng hiện tại có ${context.currentCartItems.length} sản phẩm:
+${context.currentCartItems.map((item, idx) => `  ${idx + 1}. ${item.name || item.productName || 'Sản phẩm'} - Số lượng: ${item.quantity || 1} - Giá: ${(item.price || item.unitPrice || 0).toLocaleString('vi-VN')} VNĐ`).join('\n')}
+- **Tổng cộng hiện tại**: ${(context.currentTotal || 0).toLocaleString('vi-VN')} VNĐ
+- **QUY TẮC VÀNG - BẮT BUỘC**: Khi thêm sản phẩm mới, PHẢI merge với giỏ hàng hiện tại này, KHÔNG được thay thế hoặc xóa các sản phẩm đã có.
+- **QUY TẮC VÀNG - BẮT BUỘC**: Khi gọi calculate_order_total, PHẢI truyền TẤT CẢ items (bao gồm cả items hiện tại và items mới).`;
+        systemPrompt += cartInfo;
+      }
     } else {
       systemPrompt = getGeneralChatSystemPrompt();
     }
@@ -222,6 +235,8 @@ const streamChatCompletion = async (messages, options = {}, onChunk = null) => {
     let systemPrompt = '';
     if (promptType === 'voice_order') {
       systemPrompt = getVoiceOrderSystemPrompt();
+    } else if (promptType === 'product_chat') {
+      systemPrompt = getProductChatSystemPrompt();
     } else {
       systemPrompt = getGeneralChatSystemPrompt();
     }
